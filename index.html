@@ -1,0 +1,767 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111827">
+  <title>Catur — Main lawan engine</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #111827;
+      color: #e5e7eb;
+      font-synthesis: none;
+    }
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 28px 16px;
+      background: radial-gradient(ellipse at 50% 0%, #243248 0, #111827 58%);
+    }
+    button, input { font: inherit; }
+    .app { width: min(100%, 940px); }
+    header { margin: 0 0 22px; text-align: center; }
+    .eyebrow {
+      margin: 0 0 6px;
+      color: #86efac;
+      font-size: .72rem;
+      font-weight: 800;
+      letter-spacing: .2em;
+      text-transform: uppercase;
+    }
+    h1 { margin: 0; font-size: clamp(1.7rem, 4vw, 2.4rem); letter-spacing: -.04em; }
+    .subtitle { margin: 8px 0 0; color: #9ca3af; font-size: .94rem; }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 600px) minmax(240px, 1fr);
+      gap: 24px;
+      align-items: start;
+    }
+    .game { min-width: 0; }
+    .player {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      min-height: 44px;
+      padding: 0 4px;
+      color: #d1d5db;
+      font-size: .9rem;
+    }
+    .player-name { display: flex; align-items: center; gap: 9px; font-weight: 700; }
+    .avatar { font-size: 1.2rem; }
+    .turn-dot { width: 8px; height: 8px; border-radius: 50%; background: #374151; }
+    .turn-dot.active { background: #4ade80; box-shadow: 0 0 10px #4ade8077; }
+    .board {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      overflow: hidden;
+      aspect-ratio: 1;
+      border: 5px solid #253247;
+      border-radius: 10px;
+      box-shadow: 0 22px 60px #0005;
+      user-select: none;
+      touch-action: manipulation;
+    }
+    .square {
+      position: relative;
+      display: grid;
+      place-items: center;
+      aspect-ratio: 1;
+      border: 0;
+      padding: 0;
+      color: inherit;
+      cursor: pointer;
+    }
+    .light { background: #dbe4d0; }
+    .dark { background: #789477; }
+    .square.selected { background: #f4e580; }
+    .square.last-move.light { background: #e9e299; }
+    .square.last-move.dark { background: #a9b879; }
+    .square:focus-visible { z-index: 1; outline: 3px solid #34d399; outline-offset: -3px; }
+    .piece {
+      z-index: 1;
+      font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", "DejaVu Sans", serif;
+      font-size: clamp(1.7rem, 7.2vw, 4.25rem);
+      line-height: 1;
+      transform: translateY(-2%);
+      pointer-events: none;
+    }
+    .piece.white { color: #fffdf5; text-shadow: 0 2px 2px #172116, 0 0 2px #172116; }
+    .piece.black { color: #26302b; text-shadow: 0 1px 0 #f4f4e8, 0 0 2px #f4f4e8; }
+    .square.legal::after {
+      position: absolute;
+      width: 24%;
+      height: 24%;
+      border-radius: 50%;
+      background: #1f293977;
+      content: "";
+    }
+    .square.legal:has(.piece)::after {
+      width: 84%;
+      height: 84%;
+      border: 5px solid #1f293977;
+      background: transparent;
+    }
+    .coord {
+      position: absolute;
+      z-index: 2;
+      left: 4px;
+      bottom: 2px;
+      color: #253247aa;
+      font-size: clamp(.52rem, 1.5vw, .72rem);
+      font-weight: 800;
+      line-height: 1;
+      pointer-events: none;
+    }
+    .dark .coord { color: #f1f5eaaa; }
+    .status {
+      min-height: 46px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 6px 4px 0;
+      color: #cbd5e1;
+      font-size: .88rem;
+    }
+    .status-icon { color: #4ade80; font-size: 1.15rem; }
+    .panel {
+      padding: 20px;
+      border: 1px solid #334155;
+      border-radius: 14px;
+      background: #1e293bd9;
+      box-shadow: 0 16px 40px #0002;
+    }
+    .panel h2 { margin: 0 0 18px; font-size: 1.05rem; }
+    .setting-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+    .setting-head label { color: #cbd5e1; font-size: .87rem; font-weight: 700; }
+    .elo-value { color: #86efac; font-size: 1.12rem; font-variant-numeric: tabular-nums; font-weight: 800; }
+    input[type="range"] {
+      width: 100%;
+      margin: 18px 0 8px;
+      accent-color: #4ade80;
+      cursor: pointer;
+    }
+    .range-labels { display: flex; justify-content: space-between; color: #94a3b8; font-size: .74rem; }
+    .elo-note { min-height: 40px; margin: 14px 0 18px; color: #94a3b8; font-size: .8rem; line-height: 1.5; }
+    .divider { height: 1px; margin: 18px 0; background: #334155; }
+    .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    .action {
+      min-height: 42px;
+      border: 1px solid #475569;
+      border-radius: 8px;
+      background: #29364a;
+      color: #e5e7eb;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background .15s, transform .15s;
+    }
+    .action:hover:not(:disabled) { background: #3a4b63; transform: translateY(-1px); }
+    .action.primary { grid-column: 1 / -1; border-color: #4ade80; background: #166534; color: #f0fdf4; }
+    .action.primary:hover:not(:disabled) { background: #15803d; }
+    .action:disabled { opacity: .45; cursor: not-allowed; }
+    .promotion {
+      position: fixed;
+      z-index: 5;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      background: #020617bb;
+    }
+    .promotion[hidden] { display: none; }
+    .promotion-box { width: min(100%, 360px); padding: 22px; border: 1px solid #475569; border-radius: 14px; background: #1e293b; text-align: center; }
+    .promotion-box h2 { margin: 0 0 16px; }
+    .promotion-options { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .promotion-options button { border: 1px solid #475569; border-radius: 8px; background: #29364a; color: white; font-size: 2rem; cursor: pointer; }
+    .promotion-options button:hover { border-color: #4ade80; }
+    footer { margin-top: 20px; color: #64748b; font-size: .75rem; text-align: center; }
+    @media (max-width: 740px) {
+      body { padding: 22px 12px; }
+      .layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+      .panel { padding: 17px; }
+      .game { width: min(100%, 560px); margin: auto; }
+      .piece { font-size: clamp(1.7rem, 10.4vw, 4rem); }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; } }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header>
+      <p class="eyebrow">Catur · lawan komputer</p>
+      <h1>Siap bermain?</h1>
+      <p class="subtitle">Atur kekuatan engine, lalu mulai permainan.</p>
+    </header>
+    <div class="layout">
+      <section class="game" aria-label="Permainan catur">
+        <div class="player">
+          <span class="player-name"><span class="avatar">♚</span> Engine <span id="engine-turn" class="turn-dot"></span></span>
+          <span id="engine-rating">Elo 1200</span>
+        </div>
+        <div id="board" class="board" role="grid" aria-label="Papan catur"></div>
+        <div id="status" class="status" aria-live="polite"><span class="status-icon">●</span><span>Giliran Anda — putih.</span></div>
+        <div class="player">
+          <span class="player-name"><span class="avatar">♔</span> Anda <span id="player-turn" class="turn-dot active"></span></span>
+          <span>Putih</span>
+        </div>
+      </section>
+      <aside class="panel">
+        <h2>Pengaturan permainan</h2>
+        <div class="setting-head">
+          <label for="elo">Kekuatan engine</label>
+          <output id="elo-value" class="elo-value" for="elo">1200</output>
+        </div>
+        <input id="elo" type="range" min="1" max="2500" step="1" value="1200">
+        <div class="range-labels"><span>1 · Santai</span><span>2500 · Ahli</span></div>
+        <p id="elo-note" class="elo-note">Kekuatan perkiraan; makin tinggi, engine mencari langkah lebih dalam dan lebih akurat.</p>
+        <div class="divider"></div>
+        <div class="controls">
+          <button id="new-game" class="action primary" type="button">♟ &nbsp; Permainan baru</button>
+          <button id="undo" class="action" type="button" disabled>↶ &nbsp; Urungkan</button>
+          <button id="flip" class="action" type="button">⇅ &nbsp; Balik papan</button>
+        </div>
+      </aside>
+    </div>
+    <footer>Engine lokal sederhana · rating Elo adalah perkiraan kekuatan bermain, bukan rating resmi.</footer>
+  </main>
+  <div id="promotion" class="promotion" hidden>
+    <div class="promotion-box" role="dialog" aria-modal="true" aria-labelledby="promotion-title">
+      <h2 id="promotion-title">Pilih promosi pion</h2>
+      <div id="promotion-options" class="promotion-options"></div>
+    </div>
+  </div>
+  <script>
+    (() => {
+      "use strict";
+      const GLYPHS = {
+        K: "♔", Q: "♕", R: "♖", B: "♗", N: "♘", P: "♙",
+        k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟"
+      };
+      const VALUES = { p: 100, n: 320, b: 335, r: 500, q: 900, k: 0 };
+      const FILES = "abcdefgh";
+      const START_BOARD = [
+        "rnbqkbnr".split(""), "pppppppp".split(""),
+        Array(8).fill(null), Array(8).fill(null), Array(8).fill(null), Array(8).fill(null),
+        "PPPPPPPP".split(""), "RNBQKBNR".split("")
+      ];
+      const $ = (id) => document.getElementById(id);
+      const boardEl = $("board");
+      const eloInput = $("elo");
+      const eloOutput = $("elo-value");
+      let state;
+      let history = [];
+      let selected = null;
+      let selectionMoves = [];
+      let lastMove = null;
+      let flipped = false;
+      let gameOver = false;
+      let thinking = false;
+      let pendingPromotion = null;
+      let searchToken = 0;
+
+      function initialState() {
+        return {
+          board: START_BOARD.map((row) => row.slice()),
+          turn: "w",
+          castle: { K: true, Q: true, k: true, q: true },
+          ep: null,
+          halfmove: 0,
+          fullmove: 1
+        };
+      }
+
+      function cloneState(s) {
+        return {
+          board: s.board.map((row) => row.slice()),
+          turn: s.turn,
+          castle: { ...s.castle },
+          ep: s.ep ? s.ep.slice() : null,
+          halfmove: s.halfmove,
+          fullmove: s.fullmove
+        };
+      }
+
+      function sideOf(piece) {
+        return piece ? (piece === piece.toUpperCase() ? "w" : "b") : null;
+      }
+
+      function inside(r, c) {
+        return r >= 0 && r < 8 && c >= 0 && c < 8;
+      }
+
+      function squareName(r, c) {
+        return FILES[c] + (8 - r);
+      }
+
+      function findKing(s, side) {
+        const king = side === "w" ? "K" : "k";
+        for (let r = 0; r < 8; r++) {
+          for (let c = 0; c < 8; c++) {
+            if (s.board[r][c] === king) return [r, c];
+          }
+        }
+        return null;
+      }
+
+      function isAttacked(s, r, c, bySide) {
+        const b = s.board;
+        const pawnRow = r + (bySide === "w" ? 1 : -1);
+        for (const dc of [-1, 1]) {
+          const pc = c + dc;
+          if (inside(pawnRow, pc) && b[pawnRow][pc] === (bySide === "w" ? "P" : "p")) return true;
+        }
+        const knightSteps = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
+        for (const [dr, dc] of knightSteps) {
+          const nr = r + dr, nc = c + dc;
+          if (inside(nr, nc) && b[nr][nc] === (bySide === "w" ? "N" : "n")) return true;
+        }
+        for (let dr = -1; dr <= 1; dr++) {
+          for (let dc = -1; dc <= 1; dc++) {
+            if (!dr && !dc) continue;
+            const nr = r + dr, nc = c + dc;
+            if (inside(nr, nc) && b[nr][nc] === (bySide === "w" ? "K" : "k")) return true;
+          }
+        }
+        const rays = [
+          [-1,0,"rq"],[1,0,"rq"],[0,-1,"rq"],[0,1,"rq"],
+          [-1,-1,"bq"],[-1,1,"bq"],[1,-1,"bq"],[1,1,"bq"]
+        ];
+        for (const [dr, dc, types] of rays) {
+          let nr = r + dr, nc = c + dc, distance = 1;
+          while (inside(nr, nc)) {
+            const piece = b[nr][nc];
+            if (piece) {
+              if (sideOf(piece) === bySide) {
+                const type = piece.toLowerCase();
+                if (types.includes(type) || (distance === 1 && type === "k")) return true;
+              }
+              break;
+            }
+            nr += dr; nc += dc; distance++;
+          }
+        }
+        return false;
+      }
+
+      function inCheck(s, side) {
+        const king = findKing(s, side);
+        return king ? isAttacked(s, king[0], king[1], side === "w" ? "b" : "w") : true;
+      }
+
+      function pseudoMoves(s, onlyCaptures) {
+        const moves = [];
+        const b = s.board;
+        const add = (from, to, extra) => moves.push({ from, to, ...(extra || {}) });
+        const slide = (r, c, directions, capturesOnly) => {
+          for (const [dr, dc] of directions) {
+            let nr = r + dr, nc = c + dc;
+            while (inside(nr, nc)) {
+              const target = b[nr][nc];
+              if (!target) {
+                if (!capturesOnly) add([r,c], [nr,nc]);
+              } else {
+                if (sideOf(target) !== s.turn && target.toLowerCase() !== "k") add([r,c], [nr,nc]);
+                break;
+              }
+              nr += dr; nc += dc;
+            }
+          }
+        };
+        for (let r = 0; r < 8; r++) {
+          for (let c = 0; c < 8; c++) {
+            const piece = b[r][c];
+            if (!piece || sideOf(piece) !== s.turn) continue;
+            const type = piece.toLowerCase();
+            if (type === "p") {
+              const direction = s.turn === "w" ? -1 : 1;
+              const startRow = s.turn === "w" ? 6 : 1;
+              const lastRow = s.turn === "w" ? 0 : 7;
+              for (const dc of [-1, 1]) {
+                const nr = r + direction, nc = c + dc;
+                if (inside(nr, nc) && ((b[nr][nc] && sideOf(b[nr][nc]) !== s.turn && b[nr][nc].toLowerCase() !== "k") || (s.ep && s.ep[0] === nr && s.ep[1] === nc))) {
+                  add([r,c], [nr,nc], { ...(s.ep && s.ep[0] === nr && s.ep[1] === nc && !b[nr][nc] ? { enPassant: true } : {}), ...(nr === lastRow ? { promotion: true } : {}) });
+                }
+              }
+              if (!onlyCaptures) {
+                const nr = r + direction;
+                if (inside(nr, c) && !b[nr][c]) {
+                  add([r,c], [nr,c], nr === lastRow ? { promotion: true } : undefined);
+                  const nnr = r + 2 * direction;
+                  if (r === startRow && !b[nnr][c]) add([r,c], [nnr,c], { doublePawn: true });
+                }
+              }
+            } else if (type === "n") {
+              for (const [dr, dc] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]]) {
+                const nr = r + dr, nc = c + dc;
+                if (inside(nr, nc) && (!b[nr][nc] || sideOf(b[nr][nc]) !== s.turn && b[nr][nc].toLowerCase() !== "k")) add([r,c], [nr,nc]);
+              }
+            } else if (type === "b") {
+              slide(r,c,[[-1,-1],[-1,1],[1,-1],[1,1]],onlyCaptures);
+            } else if (type === "r") {
+              slide(r,c,[[-1,0],[1,0],[0,-1],[0,1]],onlyCaptures);
+            } else if (type === "q") {
+              slide(r,c,[[-1,-1],[-1,1],[1,-1],[1,1],[-1,0],[1,0],[0,-1],[0,1]],onlyCaptures);
+            } else {
+              for (let dr = -1; dr <= 1; dr++) {
+                for (let dc = -1; dc <= 1; dc++) {
+                  if ((!dr && !dc) || !inside(r + dr, c + dc)) continue;
+                  const target = b[r + dr][c + dc];
+                  if (!target || sideOf(target) !== s.turn && target.toLowerCase() !== "k") add([r,c],[r + dr, c + dc]);
+                }
+              }
+              if (!onlyCaptures) {
+                const row = s.turn === "w" ? 7 : 0;
+                const enemy = s.turn === "w" ? "b" : "w";
+                const kingside = s.turn === "w" ? "K" : "k";
+                const queenside = s.turn === "w" ? "Q" : "q";
+                if (r === row && c === 4 && !inCheck(s, s.turn)) {
+                  if (s.castle[kingside] && b[row][7] === (s.turn === "w" ? "R" : "r") && !b[row][5] && !b[row][6] &&
+                      !isAttacked(s,row,5,enemy) && !isAttacked(s,row,6,enemy)) add([r,c],[row,6],{ castle: "king" });
+                  if (s.castle[queenside] && b[row][0] === (s.turn === "w" ? "R" : "r") && !b[row][1] && !b[row][2] && !b[row][3] &&
+                      !isAttacked(s,row,3,enemy) && !isAttacked(s,row,2,enemy)) add([r,c],[row,2],{ castle: "queen" });
+                }
+              }
+            }
+          }
+        }
+        return moves;
+      }
+
+      function applyMove(s, move) {
+        const next = cloneState(s);
+        const [fr, fc] = move.from, [tr, tc] = move.to;
+        const piece = next.board[fr][fc];
+        const captured = move.enPassant ? next.board[fr][tc] : next.board[tr][tc];
+        next.board[fr][fc] = null;
+        if (move.enPassant) next.board[fr][tc] = null;
+        next.board[tr][tc] = move.promotion ? (move.promoteTo || (s.turn === "w" ? "Q" : "q")) : piece;
+        if (move.castle) {
+          const rookFrom = move.castle === "king" ? 7 : 0;
+          const rookTo = move.castle === "king" ? 5 : 3;
+          next.board[fr][rookTo] = next.board[fr][rookFrom];
+          next.board[fr][rookFrom] = null;
+        }
+        if (piece === "K") { next.castle.K = false; next.castle.Q = false; }
+        if (piece === "k") { next.castle.k = false; next.castle.q = false; }
+        if (fr === 7 && fc === 0 || tr === 7 && tc === 0) next.castle.Q = false;
+        if (fr === 7 && fc === 7 || tr === 7 && tc === 7) next.castle.K = false;
+        if (fr === 0 && fc === 0 || tr === 0 && tc === 0) next.castle.q = false;
+        if (fr === 0 && fc === 7 || tr === 0 && tc === 7) next.castle.k = false;
+        next.ep = move.doublePawn ? [(fr + tr) / 2, fc] : null;
+        next.halfmove = piece.toLowerCase() === "p" || captured ? 0 : s.halfmove + 1;
+        if (s.turn === "b") next.fullmove++;
+        next.turn = s.turn === "w" ? "b" : "w";
+        return next;
+      }
+
+      function legalMoves(s) {
+        return pseudoMoves(s, false).filter((move) => !inCheck(applyMove(s, move), s.turn));
+      }
+
+      function evaluate(s) {
+        let score = 0;
+        for (let r = 0; r < 8; r++) {
+          for (let c = 0; c < 8; c++) {
+            const piece = s.board[r][c];
+            if (!piece) continue;
+            const side = sideOf(piece), type = piece.toLowerCase();
+            const relativeRow = side === "w" ? 7 - r : r;
+            const center = 3.5 - (Math.abs(3.5 - r) + Math.abs(3.5 - c)) / 2;
+            let positional = 0;
+            if (type === "p") positional = relativeRow * 7 + center * 2;
+            if (type === "n") positional = center * 9;
+            if (type === "b") positional = center * 4;
+            if (type === "q") positional = center * 2;
+            score += (side === "w" ? 1 : -1) * (VALUES[type] + positional);
+          }
+        }
+        return s.turn === "w" ? score : -score;
+      }
+
+      function moveOrderScore(s, move) {
+        const [fr, fc] = move.from, [tr, tc] = move.to;
+        const attacker = s.board[fr][fc];
+        const victim = move.enPassant ? s.board[fr][tc] : s.board[tr][tc];
+        return (victim ? 10 * VALUES[victim.toLowerCase()] - VALUES[attacker.toLowerCase()] : 0) + (move.promotion ? 800 : 0);
+      }
+
+      function search(s, depth, alpha, beta, ply, nodes) {
+        nodes.count++;
+        if (depth <= 0) return quiescence(s, alpha, beta, 0, nodes);
+        const moves = legalMoves(s);
+        if (!moves.length) return inCheck(s, s.turn) ? -100000 + ply : 0;
+        moves.sort((a,b) => moveOrderScore(s,b) - moveOrderScore(s,a));
+        let best = -Infinity;
+        for (const move of moves) {
+          const score = -search(applyMove(s, move), depth - 1, -beta, -alpha, ply + 1, nodes);
+          if (score > best) best = score;
+          if (score > alpha) alpha = score;
+          if (alpha >= beta || nodes.count > 24000) break;
+        }
+        return best;
+      }
+
+      function quiescence(s, alpha, beta, remaining, nodes) {
+        const checked = inCheck(s, s.turn);
+        if (checked) {
+          const evasions = legalMoves(s);
+          if (!evasions.length) return -100000;
+          if (remaining >= 3 || nodes.count > 24000) return evaluate(s);
+          for (const move of evasions) {
+            const score = -quiescence(applyMove(s, move), -beta, -alpha, remaining + 1, nodes);
+            if (score >= beta) return beta;
+            if (score > alpha) alpha = score;
+          }
+          return alpha;
+        }
+        const standPat = evaluate(s);
+        if (standPat >= beta) return beta;
+        if (standPat > alpha) alpha = standPat;
+        if (remaining >= 3 || nodes.count > 24000) return alpha;
+        const captures = pseudoMoves(s, true)
+          .filter((move) => !inCheck(applyMove(s, move), s.turn))
+          .sort((a,b) => moveOrderScore(s,b) - moveOrderScore(s,a));
+        for (const move of captures) {
+          const score = -quiescence(applyMove(s, move), -beta, -alpha, remaining + 1, nodes);
+          if (score >= beta) return beta;
+          if (score > alpha) alpha = score;
+        }
+        return alpha;
+      }
+
+      function chooseEngineMove(s, elo) {
+        const moves = legalMoves(s);
+        if (!moves.length) return null;
+        const depth = elo < 350 ? 1 : elo < 1000 ? 2 : elo < 1850 ? 3 : 4;
+        const nodes = { count: 0 };
+        const scored = moves.map((move) => ({
+          move,
+          score: -search(applyMove(s, move), depth - 1, -Infinity, Infinity, 1, nodes)
+        })).sort((a,b) => b.score - a.score);
+        const pool = Math.max(1, Math.ceil(12 * (1 - elo / 2500)));
+        const candidates = scored.slice(0, Math.min(pool, scored.length));
+        const weightPower = 0.35 + elo / 520;
+        const weights = candidates.map((_, index) => 1 / Math.pow(index + 1, weightPower));
+        let pick = Math.random() * weights.reduce((sum, weight) => sum + weight, 0);
+        for (let i = 0; i < candidates.length; i++) {
+          pick -= weights[i];
+          if (pick <= 0) return candidates[i].move;
+        }
+        return candidates[0].move;
+      }
+
+      function moveNotation(move, before) {
+        const piece = before.board[move.from[0]][move.from[1]];
+        const capture = move.enPassant || before.board[move.to[0]][move.to[1]];
+        if (move.castle) return move.castle === "king" ? "O-O" : "O-O-O";
+        return (piece.toLowerCase() === "p" ? "" : piece.toUpperCase()) +
+          (capture ? "x" : "") + squareName(move.to[0], move.to[1]) +
+          (move.promotion ? "=" + (move.promoteTo || "Q").toUpperCase() : "");
+      }
+
+      function getGameStatus() {
+        const moves = legalMoves(state);
+        if (!moves.length) return inCheck(state, state.turn)
+          ? { text: state.turn === "w" ? "Skakmat — engine menang." : "Skakmat — Anda menang!", ended: true }
+          : { text: "Remis — pat.", ended: true };
+        if (state.halfmove >= 100) return { text: "Remis — aturan 50 langkah.", ended: true };
+        const pieces = state.board.flat().filter(Boolean).map((piece) => piece.toLowerCase());
+        if (pieces.every((piece) => piece === "k") ||
+            pieces.filter((piece) => piece !== "k").length === 1 && pieces.some((piece) => piece === "b" || piece === "n")) {
+          return { text: "Remis — materi tidak cukup untuk skakmat.", ended: true };
+        }
+        return { text: inCheck(state, state.turn) ? "Skak!" : "", ended: false };
+      }
+
+      function render() {
+        boardEl.replaceChildren();
+        const rowOrder = flipped ? [0,1,2,3,4,5,6,7] : [7,6,5,4,3,2,1,0];
+        const colOrder = flipped ? [7,6,5,4,3,2,1,0] : [0,1,2,3,4,5,6,7];
+        for (const r of rowOrder) {
+          for (const c of colOrder) {
+            const square = document.createElement("button");
+            square.type = "button";
+            square.className = "square " + ((r + c) % 2 === 0 ? "light" : "dark");
+            square.setAttribute("role", "gridcell");
+            square.setAttribute("aria-label", squareName(r,c) + (state.board[r][c] ? " " + state.board[r][c] : ""));
+            if (selected && selected[0] === r && selected[1] === c) square.classList.add("selected");
+            if (lastMove && (lastMove.from[0] === r && lastMove.from[1] === c || lastMove.to[0] === r && lastMove.to[1] === c)) square.classList.add("last-move");
+            const moveHere = selectionMoves.some((move) => move.to[0] === r && move.to[1] === c);
+            if (moveHere) square.classList.add("legal");
+            const piece = state.board[r][c];
+            if (piece) {
+              const pieceEl = document.createElement("span");
+              pieceEl.className = "piece " + (sideOf(piece) === "w" ? "white" : "black");
+              pieceEl.textContent = GLYPHS[piece];
+              square.append(pieceEl);
+            }
+            if ((!flipped && r === 7) || (flipped && r === 0)) {
+              const coord = document.createElement("span");
+              coord.className = "coord";
+              coord.textContent = FILES[c];
+              square.append(coord);
+            }
+            if ((!flipped && c === 0) || (flipped && c === 7)) {
+              const coord = document.createElement("span");
+              coord.className = "coord";
+              coord.style.left = "auto";
+              coord.style.right = "4px";
+              coord.style.top = "2px";
+              coord.style.bottom = "auto";
+              coord.textContent = 8 - r;
+              square.append(coord);
+            }
+            square.disabled = gameOver || thinking || state.turn !== "w" || !!pendingPromotion;
+            square.addEventListener("click", () => onSquareClick(r,c));
+            boardEl.append(square);
+          }
+        }
+        const status = getGameStatus();
+        if (status.ended && !thinking) gameOver = true;
+        $("status").innerHTML = '<span class="status-icon">' + (thinking ? "◌" : status.ended ? "◆" : status.text ? "!" : "●") + '</span><span>' +
+          (thinking ? "Engine sedang berpikir…" : status.text || (state.turn === "w" ? "Giliran Anda — putih." : "Giliran engine — hitam.")) + "</span>";
+        $("player-turn").classList.toggle("active", state.turn === "w" && !gameOver);
+        $("engine-turn").classList.toggle("active", state.turn === "b" && !gameOver);
+        $("undo").disabled = history.length === 0 || thinking;
+      }
+
+      function onSquareClick(r,c) {
+        if (gameOver || thinking || state.turn !== "w") return;
+        const piece = state.board[r][c];
+        if (selected) {
+          const candidates = selectionMoves.filter((move) => move.to[0] === r && move.to[1] === c);
+          if (candidates.length) {
+            if (candidates[0].promotion) {
+              pendingPromotion = candidates[0];
+              showPromotion();
+            } else {
+              playMove(candidates[0]);
+            }
+            return;
+          }
+        }
+        if (piece && sideOf(piece) === "w") {
+          selected = [r,c];
+          selectionMoves = legalMoves(state).filter((move) => move.from[0] === r && move.from[1] === c);
+        } else {
+          selected = null;
+          selectionMoves = [];
+        }
+        render();
+      }
+
+      function showPromotion() {
+        const options = $("promotion-options");
+        options.replaceChildren();
+        for (const type of ["Q","R","B","N"]) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.textContent = GLYPHS[type];
+          button.setAttribute("aria-label", ({ Q: "Menteri", R: "Benteng", B: "Gajah", N: "Kuda" })[type]);
+          button.addEventListener("click", () => {
+            const move = { ...pendingPromotion, promoteTo: type };
+            pendingPromotion = null;
+            $("promotion").hidden = true;
+            playMove(move);
+          });
+          options.append(button);
+        }
+        $("promotion").hidden = false;
+      }
+
+      function playMove(move) {
+        history.push({ state: cloneState(state), lastMove: lastMove ? { from: lastMove.from.slice(), to: lastMove.to.slice() } : null });
+        const before = state;
+        state = applyMove(state, move);
+        lastMove = { from: move.from.slice(), to: move.to.slice() };
+        selected = null;
+        selectionMoves = [];
+        const notation = moveNotation(move, before);
+        $("status").dataset.lastMove = notation;
+        render();
+        if (!gameOver && state.turn === "b") runEngine();
+      }
+
+      function runEngine() {
+        thinking = true;
+        const token = ++searchToken;
+        render();
+        const elo = Number(eloInput.value);
+        window.setTimeout(() => {
+          if (token !== searchToken || gameOver || state.turn !== "b") return;
+          const move = chooseEngineMove(state, elo);
+          if (token !== searchToken) return;
+          thinking = false;
+          if (move) {
+            history.push({ state: cloneState(state), lastMove: lastMove ? { from: lastMove.from.slice(), to: lastMove.to.slice() } : null });
+            state = applyMove(state, move);
+            lastMove = { from: move.from.slice(), to: move.to.slice() };
+          }
+          render();
+        }, 80);
+      }
+
+      function newGame() {
+        searchToken++;
+        state = initialState();
+        history = [];
+        selected = null;
+        selectionMoves = [];
+        lastMove = null;
+        gameOver = false;
+        thinking = false;
+        pendingPromotion = null;
+        $("promotion").hidden = true;
+        render();
+      }
+
+      function undo() {
+        if (!history.length || thinking) return;
+        searchToken++;
+        const turnsToUndo = state.turn === "w" && history.length >= 2 ? 2 : 1;
+        for (let i = 0; i < turnsToUndo; i++) {
+          const previous = history.pop();
+          state = previous.state;
+          lastMove = previous.lastMove;
+        }
+        gameOver = false;
+        selected = null;
+        selectionMoves = [];
+        render();
+      }
+
+      function updateElo() {
+        const elo = Number(eloInput.value);
+        eloOutput.value = elo;
+        eloOutput.textContent = elo.toLocaleString("id-ID");
+        $("engine-rating").textContent = "Elo " + elo.toLocaleString("id-ID");
+        $("elo-note").textContent = elo < 350
+          ? "Engine bermain lebih santai dengan pilihan langkah yang bervariasi."
+          : elo < 1000
+            ? "Engine mencari hingga 2 langkah ke depan; cocok untuk pemula."
+            : elo < 1850
+              ? "Engine mencari hingga 3 langkah ke depan dengan permainan lebih konsisten."
+              : "Engine mencari hingga 4 langkah ke depan dan memilih langkah terbaiknya.";
+      }
+
+      boardEl.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && pendingPromotion) {
+          pendingPromotion = null;
+          $("promotion").hidden = true;
+          render();
+        }
+      });
+      $("new-game").addEventListener("click", newGame);
+      $("undo").addEventListener("click", undo);
+      $("flip").addEventListener("click", () => { flipped = !flipped; render(); });
+      eloInput.addEventListener("input", updateElo);
+      newGame();
+      updateElo();
+    })();
+  </script>
+</body>
+</html>

@@ -55,6 +55,19 @@
     .avatar { font-size: 1.2rem; }
     .turn-dot { width: 8px; height: 8px; border-radius: 50%; background: #374151; }
     .turn-dot.active { background: #4ade80; box-shadow: 0 0 10px #4ade8077; }
+    .clock {
+      min-width: 62px;
+      padding: 5px 8px;
+      border: 1px solid #475569;
+      border-radius: 7px;
+      background: #111827;
+      color: #e5e7eb;
+      font-size: .86rem;
+      font-variant-numeric: tabular-nums;
+      font-weight: 800;
+      text-align: center;
+    }
+    .clock.active { border-color: #4ade80; color: #86efac; }
     .board {
       display: grid;
       grid-template-columns: repeat(8, 1fr);
@@ -163,6 +176,19 @@
     .action.primary { grid-column: 1 / -1; border-color: #4ade80; background: #166534; color: #f0fdf4; }
     .action.primary:hover:not(:disabled) { background: #15803d; }
     .action:disabled { opacity: .45; cursor: not-allowed; }
+    .clock-setting { display: grid; gap: 8px; }
+    .clock-setting label { color: #cbd5e1; font-size: .87rem; font-weight: 700; }
+    .clock-setting select {
+      width: 100%;
+      min-height: 42px;
+      padding: 0 10px;
+      border: 1px solid #475569;
+      border-radius: 8px;
+      background: #29364a;
+      color: #e5e7eb;
+    }
+    .clock-setting select:disabled { opacity: .55; }
+    .clock-note { margin: 8px 0 0; color: #94a3b8; font-size: .76rem; line-height: 1.45; }
     .promotion {
       position: fixed;
       z-index: 5;
@@ -200,13 +226,13 @@
       <section class="game" aria-label="Permainan catur">
         <div class="player">
           <span class="player-name"><span class="avatar">♚</span> Engine <span id="engine-turn" class="turn-dot"></span></span>
-          <span id="engine-rating">Elo 1200</span>
+          <span class="player-name"><span id="engine-clock" class="clock" aria-label="Waktu engine">∞</span><span id="engine-rating">Elo 1200</span></span>
         </div>
         <div id="board" class="board" role="grid" aria-label="Papan catur"></div>
         <div id="status" class="status" aria-live="polite"><span class="status-icon">●</span><span>Giliran Anda — putih.</span></div>
         <div class="player">
           <span class="player-name"><span class="avatar">♔</span> Anda <span id="player-turn" class="turn-dot active"></span></span>
-          <span>Putih</span>
+          <span class="player-name"><span id="player-clock" class="clock" aria-label="Waktu Anda">∞</span> Putih</span>
         </div>
       </section>
       <aside class="panel">
@@ -218,6 +244,14 @@
         <input id="elo" type="range" min="1" max="2500" step="1" value="1200">
         <div class="range-labels"><span>1 · Santai</span><span>2500 · Ahli</span></div>
         <p id="elo-note" class="elo-note">Kekuatan perkiraan; makin tinggi, engine mencari langkah lebih dalam dan lebih akurat.</p>
+        <div class="divider"></div>
+        <div class="clock-setting">
+          <label for="clock-setting">Waktu per pemain</label>
+          <select id="clock-setting">
+            <option value="0">Tanpa batas</option>
+          </select>
+        </div>
+        <p class="clock-note">Pilih 1–60 menit atau tanpa batas. Atur sebelum langkah pertama; waktu mulai saat permainan baru dimulai.</p>
         <div class="divider"></div>
         <div class="controls">
           <button id="new-game" class="action primary" type="button">♟ &nbsp; Permainan baru</button>
@@ -262,6 +296,11 @@
       let thinking = false;
       let pendingPromotion = null;
       let searchToken = 0;
+      let clockDuration = null;
+      let clockRemaining = { w: null, b: null };
+      let clockRunningSide = null;
+      let lastClockTick = 0;
+      let endMessage = "";
 
       function initialState() {
         return {
@@ -295,6 +334,40 @@
 
       function squareName(r, c) {
         return FILES[c] + (8 - r);
+      }
+
+      function formatClock(milliseconds) {
+        const totalSeconds = Math.ceil(milliseconds / 1000);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        return String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0");
+      }
+
+      function renderClock() {
+        for (const [side, id] of [["w", "player-clock"], ["b", "engine-clock"]]) {
+          const clock = $(id);
+          clock.textContent = clockDuration === null ? "∞" : formatClock(clockRemaining[side]);
+          clock.classList.toggle("active", clockDuration !== null && clockRunningSide === side && !gameOver);
+        }
+      }
+
+      function updateClock() {
+        const now = Date.now();
+        if (clockDuration !== null && clockRunningSide && !gameOver) {
+          const side = clockRunningSide;
+          clockRemaining[side] = Math.max(0, clockRemaining[side] - (now - lastClockTick));
+          if (clockRemaining[side] === 0) {
+            endMessage = side === "w" ? "Waktu habis — engine menang." : "Waktu habis — Anda menang!";
+            gameOver = true;
+            thinking = false;
+            clockRunningSide = null;
+            searchToken++;
+            render();
+            return;
+          }
+        }
+        lastClockTick = now;
+        renderClock();
       }
 
       function findKing(s, side) {
@@ -564,6 +637,7 @@
       }
 
       function getGameStatus() {
+        if (endMessage) return { text: endMessage, ended: true };
         const moves = legalMoves(state);
         if (!moves.length) return inCheck(state, state.turn)
           ? { text: state.turn === "w" ? "Skakmat — engine menang." : "Skakmat — Anda menang!", ended: true }
@@ -621,12 +695,17 @@
           }
         }
         const status = getGameStatus();
-        if (status.ended && !thinking) gameOver = true;
+        if (status.ended && !thinking) {
+          gameOver = true;
+          clockRunningSide = null;
+        }
         $("status").innerHTML = '<span class="status-icon">' + (thinking ? "◌" : status.ended ? "◆" : status.text ? "!" : "●") + '</span><span>' +
           (thinking ? "Engine sedang berpikir…" : status.text || (state.turn === "w" ? "Giliran Anda — putih." : "Giliran engine — hitam.")) + "</span>";
         $("player-turn").classList.toggle("active", state.turn === "w" && !gameOver);
         $("engine-turn").classList.toggle("active", state.turn === "b" && !gameOver);
+        $("clock-setting").disabled = history.length > 0;
         $("undo").disabled = history.length === 0 || thinking;
+        renderClock();
       }
 
       function onSquareClick(r,c) {
@@ -674,9 +753,17 @@
       }
 
       function playMove(move) {
-        history.push({ state: cloneState(state), lastMove: lastMove ? { from: lastMove.from.slice(), to: lastMove.to.slice() } : null });
+        updateClock();
+        if (gameOver) return;
+        history.push({
+          state: cloneState(state),
+          lastMove: lastMove ? { from: lastMove.from.slice(), to: lastMove.to.slice() } : null,
+          clockRemaining: { ...clockRemaining }
+        });
         const before = state;
         state = applyMove(state, move);
+        clockRunningSide = state.turn;
+        lastClockTick = Date.now();
         lastMove = { from: move.from.slice(), to: move.to.slice() };
         selected = null;
         selectionMoves = [];
@@ -695,10 +782,18 @@
           if (token !== searchToken || gameOver || state.turn !== "b") return;
           const move = chooseEngineMove(state, elo);
           if (token !== searchToken) return;
+          updateClock();
+          if (gameOver) return;
           thinking = false;
           if (move) {
-            history.push({ state: cloneState(state), lastMove: lastMove ? { from: lastMove.from.slice(), to: lastMove.to.slice() } : null });
+            history.push({
+              state: cloneState(state),
+              lastMove: lastMove ? { from: lastMove.from.slice(), to: lastMove.to.slice() } : null,
+              clockRemaining: { ...clockRemaining }
+            });
             state = applyMove(state, move);
+            clockRunningSide = state.turn;
+            lastClockTick = Date.now();
             lastMove = { from: move.from.slice(), to: move.to.slice() };
           }
           render();
@@ -715,6 +810,12 @@
         gameOver = false;
         thinking = false;
         pendingPromotion = null;
+        endMessage = "";
+        const minutes = Number($("clock-setting").value);
+        clockDuration = minutes === 0 ? null : minutes * 60 * 1000;
+        clockRemaining = { w: clockDuration, b: clockDuration };
+        clockRunningSide = "w";
+        lastClockTick = Date.now();
         $("promotion").hidden = true;
         render();
       }
@@ -727,8 +828,12 @@
           const previous = history.pop();
           state = previous.state;
           lastMove = previous.lastMove;
+          clockRemaining = previous.clockRemaining;
         }
         gameOver = false;
+        endMessage = "";
+        clockRunningSide = state.turn;
+        lastClockTick = Date.now();
         selected = null;
         selectionMoves = [];
         render();
@@ -759,6 +864,16 @@
       $("undo").addEventListener("click", undo);
       $("flip").addEventListener("click", () => { flipped = !flipped; render(); });
       eloInput.addEventListener("input", updateElo);
+      for (let minutes = 1; minutes <= 60; minutes++) {
+        const option = document.createElement("option");
+        option.value = String(minutes);
+        option.textContent = minutes + " menit";
+        $("clock-setting").append(option);
+      }
+      $("clock-setting").addEventListener("change", () => {
+        if (!history.length) newGame();
+      });
+      window.setInterval(updateClock, 200);
       newGame();
       updateElo();
     })();
